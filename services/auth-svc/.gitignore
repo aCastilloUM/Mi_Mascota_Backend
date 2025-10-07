@@ -1,0 +1,53 @@
+# --- Entorno virtual ---
+.venv/
+env/
+venv/
+
+# --- Archivos de Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pkl
+
+# --- Configuración local ---
+*.env
+.env.local
+.env.*.local
+
+# --- Logs y debug ---
+*.log
+*.out
+*.err
+logs/
+
+# --- Coverage / testing ---
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+.tox/
+
+# --- Herramientas ---
+.mypy_cache/
+.dmypy.json
+.pyre/
+.pytype/
+ruff_cache/
+.cache/
+
+# --- IDE / Editor ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Alembic (solo versiones generadas automáticamente) ---
+migrations/__pycache__/
+migrations/*.pyc
+# Ojo: NO ignores migrations/ por completo, solo los cachés
+
+# --- Otros ---
+*.sqlite3
+.DS_Store
+Thumbs.db

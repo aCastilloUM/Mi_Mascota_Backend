@@ -1,3 +1,9 @@
+SQLAlchemy==2.0.32
+alembic==1.13.2
+python-dotenv==1.0.1
+psycopg[binary]==3.2.1
+
+
 .PHONY: bootstrap up down logs test lint migrate
 
 bootstrap:

@@ -1,0 +1,78 @@
+Deploy Local – Mi Mascota Backend
+
+Este directorio contiene los archivos necesarios para levantar la infraestructura local con Docker Compose: base de datos, mensajería y herramientas de apoyo.
+
+📦 Servicios disponibles
+
+Postgres 16 – Base de datos principal (appdb)
+
+Adminer – Cliente web para conectarse a la DB
+
+Zookeeper + Kafka – Bus de eventos (cuando quieras usarlo)
+
+Elasticsearch + Kibana – Búsqueda y visualización (cuando quieras usarlo)
+
+▶️ Cómo levantar
+
+Desde esta carpeta (backend/deploy/):
+
+# Levantar todo
+docker compose up -d
+
+# Levantar solo Postgres + Adminer (recomendado para empezar)
+docker compose up -d postgres adminer
+
+
+Ver el estado de los contenedores:
+
+docker compose ps
+
+
+Apagar todo:
+
+docker compose down -v
+
+🔑 Credenciales de Postgres
+
+Por defecto (definidas en .env):
+
+Usuario: app
+
+Password: app
+
+Base de datos: appdb
+
+Puerto expuesto: 5432
+
+Adminer disponible en: http://localhost:8081
+
+Conectar usando:
+    
+System: PostgreSQL
+
+Server: postgres (si Adminer está en Docker) o localhost (si usás cliente en tu compu)
+
+Username: app
+
+Password: app
+
+Database: appdb
+
+🌐 URLs de conexión (DATABASE_URL)
+
+Dependiendo de dónde corras tus microservicios:
+
+Servicios corriendo en tu compu (fuera de Docker):
+
+postgres://app:app@localhost:5432/appdb
+
+
+Servicios corriendo dentro del mismo docker-compose:
+
+postgres://app:app@postgres:5432/appdb
+
+
+👉 Usá variables de entorno en tu .env:
+
+DATABASE_URL=postgres://app:app@localhost:5432/appdb   # para dev local
+DATABASE_URL=postgres://app:app@postgres:5432/appdb  # para servicios en Docker
