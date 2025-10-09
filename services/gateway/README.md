@@ -1,72 +1,53 @@
 # API Gateway - Mi Mascota
 
-Este servicio actúa como punto de entrada único para todas las peticiones del frontend.
+Gateway HTTP (FastAPI) que actúa como punto de entrada único para el frontend.
 
 ## Funcionalidades
 
-- **Autenticación centralizada**: Valida tokens JWT una sola vez
-- **Enrutamiento**: Distribuye requests a los microservicios correspondientes
-- **Headers de usuario**: Agrega información del usuario autenticado para los servicios internos
-- **CORS**: Maneja CORS para el frontend
-- **Rate limiting**: Protege contra abuso (opcional)
+- **Autenticación centralizada**: valida el JWT una vez y propaga los claims.
+- **Enrutamiento**: hoy expone `auth-svc` y `profiles-svc` bajo `/api/v1/*`.
+- **Headers de usuario**: añade `X-User-ID` y `X-User-Email` para que los microservicios conozcan al usuario.
+- **CORS** y **rate limiting** global.
+- **Circuit breaker** y **cache** opcional usando Redis.
 
 ## Arquitectura
 
 ```
-Frontend → Gateway (puerto 8080) → Microservicios
-                ↓
-         Valida JWT
-                ↓
-     Agrega X-User-ID, X-User-Email
-                ↓
-         Enruta al servicio
+Frontend ─┬─> Gateway (puerto 8080) ──> auth-svc (8006)
+          └─> Gateway (puerto 8080) ──> profiles-svc (8082)
 ```
 
-## Servicios Backend
+## Variables de entorno mínimas
 
-- `auth-svc`: http://localhost:8002 - Autenticación
-- `mascotas-svc`: http://localhost:8003 - Gestión de mascotas
-- `veterinarios-svc`: http://localhost:8004 - Veterinarios
-- `citas-svc`: http://localhost:8005 - Citas
+```env
+# Servicios backend
+AUTH_SERVICE_URL=http://localhost:8006
+PROFILE_SERVICE_URL=http://localhost:8082
 
-## Ejecutar
+# JWT (debe coincidir con auth-svc)
+JWT_SECRET=change-me-in-dev
+JWT_ISSUER=mimascota-auth
+JWT_AUDIENCE=mimascota-api
+
+# Redis (rate limit + cache)
+REDIS_URL=redis://localhost:6379/0
+```
+
+Revisá `.env.example` para el listado completo.
+
+## Ejecutar localmente
 
 ```bash
 cd services/gateway
 python -m uvicorn app.main:app --reload --port 8080
 ```
 
-## Variables de Entorno
+En Docker se levanta junto con `auth-svc` y `profiles-svc` mediante `deploy/docker-compose.yml`.
 
-Crear archivo `.env`:
+## Rutas expuestas
 
-```env
-# Auth Service
-AUTH_SERVICE_URL=http://localhost:8002
-JWT_SECRET=change-me-in-dev
-JWT_ISSUER=mimascota.auth
-JWT_AUDIENCE=mimascota.front
-
-# Otros servicios
-MASCOTAS_SERVICE_URL=http://localhost:8003
-VETERINARIOS_SERVICE_URL=http://localhost:8004
-CITAS_SERVICE_URL=http://localhost:8005
-
-# CORS
-CORS_ORIGINS=http://localhost:3000,http://localhost:5173
-```
-
-## Endpoints
-
-### Públicos (sin autenticación)
-- `POST /api/v1/auth/register` → auth-svc
-- `POST /api/v1/auth/login` → auth-svc
-- `POST /api/v1/auth/refresh` → auth-svc
-- `GET /health` → Gateway health check
-
-### Protegidos (requieren token)
-- `GET /api/v1/auth/me` → auth-svc (con validación)
-- `POST /api/v1/auth/logout` → auth-svc (con validación)
-- `GET /api/v1/mascotas/*` → mascotas-svc
-- `GET /api/v1/veterinarios/*` → veterinarios-svc
-- `GET /api/v1/citas/*` → citas-svc
+- `POST /api/v1/auth/*` → auth-svc (registro, login, refresh, etc.). Las rutas públicas se gestionan antes del middleware de auth.
+- `GET|POST|PUT|PATCH|DELETE /api/v1/profiles/*` → profiles-svc (requieren token válido).
+- `GET /health` → health del gateway.
+- `GET /metrics` → métricas Prometheus.
+- `GET /circuit-breakers` → estado de los circuit breakers.

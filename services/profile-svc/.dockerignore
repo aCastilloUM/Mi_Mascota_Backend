@@ -1,0 +1,15 @@
+.venv
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.git
+.gitignore
+.env
+*.log
+tests/
+node_modules/
+
+# Si quieres permitir alembic.ini explícitamente:
+*.ini
+!alembic.ini
