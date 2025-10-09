@@ -4,7 +4,7 @@ from pydantic import Field
 class Settings(BaseSettings):
     # Servicios backend
     auth_service_url: str = Field(alias="AUTH_SERVICE_URL")
-    # Otros servicios se agregarán cuando se implementen
+    profile_service_url: str = Field(alias="PROFILE_SERVICE_URL")
     
     # JWT (debe coincidir con auth-svc)
     jwt_secret: str = Field(alias="JWT_SECRET")

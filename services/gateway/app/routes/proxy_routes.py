@@ -22,14 +22,24 @@ async def auth_service(path: str, request: Request) -> Response:
     )
 
 
-# ============= OTROS SERVICIOS =============
-# Cuando implementes otros servicios (mascotas, veterinarios, etc.),
-# agrégalos aquí siguiendo el mismo patrón:
-#
-# @router.api_route("/api/v1/servicio/{path:path}", methods=[...])
-# async def servicio(path: str, request: Request) -> Response:
-#     return await proxy_request(
-#         request,
-#         settings.servicio_url,
-#         path=f"/api/v1/servicio/{path}"
-#     )
+# ============= PROFILE SERVICE =============
+@router.api_route("/api/v1/profiles", methods=["GET", "POST", "OPTIONS"])
+async def profiles_root(request: Request) -> Response:
+    """Proxy para la colección de perfiles."""
+    return await proxy_request(
+        request,
+        settings.profile_service_url,
+        path="/profiles",
+        service_name="profiles-svc",
+    )
+
+
+@router.api_route("/api/v1/profiles/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+async def profiles_service(path: str, request: Request) -> Response:
+    """Proxy para operaciones sobre un perfil."""
+    return await proxy_request(
+        request,
+        settings.profile_service_url,
+        path=f"/profiles/{path}",
+        service_name="profiles-svc",
+    )

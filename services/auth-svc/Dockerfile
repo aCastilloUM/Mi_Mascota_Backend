@@ -18,8 +18,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar código de la aplicación
 COPY . .
 
+# Preparar entrypoint para correr migraciones automáticamente
+RUN chmod +x /app/entrypoint.sh
+
 # Exponer puerto
 EXPOSE 8006
 
-# Comando de inicio (uvicorn)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8006"]
+# Ejecutar script que corre alembic y luego arranca uvicorn
+ENTRYPOINT ["/app/entrypoint.sh"]

@@ -10,6 +10,7 @@ services:
       - "${POSTGRES_PORT}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./db-init:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
@@ -49,6 +50,33 @@ services:
       timeout: 5s
       retries: 5
 
+  minio:
+    image: minio/minio:RELEASE.2024-08-17T01-24-54Z
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+
+  minio-setup:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      set -e
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin}
+      mc mb -p local/profiles-media || true
+      mc anonymous set download local/profiles-media || true
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    restart: "no"
+
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.14.1
     environment:
@@ -67,7 +95,7 @@ services:
     depends_on:
       - elasticsearch
 
-  adminer: # opcional para inspeccionar la DB desde navegador
+  adminer:
     image: adminer
     restart: always
     ports:
@@ -77,6 +105,42 @@ services:
 
   # ==================== MICROSERVICIOS ====================
   
+  profiles-svc:
+    build:
+      context: ../services/profile-svc
+    container_name: profiles-svc
+    env_file:
+      - ../services/profile-svc/.env
+    environment:
+      DB_HOST: postgres
+      DB_USER: app
+      DB_PASSWORD: app
+      DB_NAME: appdb
+      KAFKA_ENABLED: "true"
+      MINIO_ENABLED: "true"
+      MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_URL: http://localhost:9000/profiles-media
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      minio:
+        condition: service_started
+      minio-setup:
+        condition: service_completed_successfully
+    ports:
+      - "8082:8080"
+    volumes:
+      - ../services/profile-svc:/app
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   auth-svc:
     build:
       context: ../services/auth-svc
@@ -143,6 +207,7 @@ services:
     environment:
       # Services URLs
       AUTH_SERVICE_URL: http://auth-svc:8006
+      PROFILE_SERVICE_URL: http://profiles-svc:8080
       
       # Redis
       REDIS_URL: redis://redis:6379/0
@@ -156,19 +221,19 @@ services:
       REQUEST_ID_HEADER: X-Request-Id
       
       # Circuit Breaker
-      CIRCUIT_BREAKER_ENABLED: true
+      CIRCUIT_BREAKER_ENABLED: "true"
       CIRCUIT_BREAKER_THRESHOLD: 5
       CIRCUIT_BREAKER_TIMEOUT: 60
       CIRCUIT_BREAKER_HALF_OPEN_SUCCESSES: 2
       
       # Cache
-      RESPONSE_CACHE_ENABLED: true
+      RESPONSE_CACHE_ENABLED: "true"
       CACHE_TTL_ME: 60
       CACHE_TTL_HEALTH: 10
       
       # CORS
       CORS_ORIGINS: http://localhost:3000,http://localhost:5173
-      CORS_CREDENTIALS: true
+      CORS_CREDENTIALS: "true"
     depends_on:
       auth-svc:
         condition: service_healthy
@@ -184,3 +249,4 @@ services:
 
 volumes:
   pgdata:
+  minio-data:
