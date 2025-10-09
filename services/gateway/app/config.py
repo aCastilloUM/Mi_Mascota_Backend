@@ -11,8 +11,8 @@ class Settings(BaseSettings):
     jwt_issuer: str = Field(alias="JWT_ISSUER")
     jwt_audience: str = Field(alias="JWT_AUDIENCE")
     
-    # CORS
-    cors_origins: str = Field(default="http://localhost:3000,http://localhost:5173", alias="CORS_ORIGINS")
+    # CORS - Permite localhost y conexiones desde la red local (puertos 5173 y 5174)
+    cors_origins: str = Field(default="http://localhost:3000,http://localhost:5173,http://localhost:5174,http://*:5173,http://*:5174", alias="CORS_ORIGINS")
     
     # Gateway config
     gateway_port: int = Field(default=8080, alias="GATEWAY_PORT")

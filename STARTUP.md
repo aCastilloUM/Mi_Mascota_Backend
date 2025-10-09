@@ -200,7 +200,7 @@ docker-compose -f deploy/docker-compose.yml logs -f kafka
    - Esperar ~10 segundos para que Kafka inicie
 2. **Segundo**: auth-svc (necesita Postgres, Redis, Kafka)
 3. **Tercero**: Gateway (necesita auth-svc)
-4. **Opcional**: Otros servicios (mascotas, veterinarios, citas)
+4. **Opcional**: Otros servicios 
 
 ---
 
