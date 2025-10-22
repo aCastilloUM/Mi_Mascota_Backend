@@ -18,6 +18,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar código de la aplicación
 COPY . .
 
+# Corregir finales CRLF que pueden aparecer cuando se construye desde Windows
+RUN sed -i 's/\r$//' /app/entrypoint.sh || true
+
 # Preparar entrypoint para correr migraciones automáticamente
 RUN chmod +x /app/entrypoint.sh
 
