@@ -8,7 +8,7 @@
 
 ---
 
-## 🎯 Features Implementadas (Total: 14)
+## 🎯 Features Implementadas (Total: 22)
 
 ### ✅ Sprint 1: AUTH-SVC Security (5 features)
 1. ✅ **Email Verification** - Verificación obligatoria de email al registrarse
@@ -30,20 +30,31 @@
 13. ✅ **2FA Login Integration** - Flujo completo de 2 pasos
 14. ✅ **2FA Rate Limiting** - Protección contra brute force
 
+### ✅ Profile Service: Complete Profile Management (8 features) 🆕
+15. ✅ **Profile CRUD** - Crear, leer, actualizar, eliminar perfiles
+16. ✅ **Role Management** - Cliente y Proveedor con validaciones
+17. ✅ **Media Upload** - Subida de fotos a MinIO con cleanup automático
+18. ✅ **Geolocation** - Coordenadas con validación de rangos
+19. ✅ **Change History** - Tracking completo de modificaciones
+20. ✅ **Kafka Integration** - Eventos de registro de clientes
+21. ✅ **Data Validation** - Unicidad de email, documento y user_id
+22. ✅ **Prometheus Metrics** - Métricas de operaciones y uploads
+
 ---
 
 ## 📊 Métricas del Proyecto
 
-| Métrica | Sprint 1 | Sprint 2 | Sprint 3 | **Total** |
-|---------|----------|----------|----------|-----------|
-| **Archivos nuevos** | 7 | 5 | 6 | **18** |
-| **Archivos modificados** | 8 | 5 | 8 | **16** (algunos compartidos) |
-| **Endpoints nuevos** | 5 | 2 | 8 | **15** |
-| **Middlewares nuevos** | 0 | 3 | 0 | **3** |
-| **Migraciones aplicadas** | 1 | 0 | 1 | **2** |
-| **Dependencias agregadas** | 0 | 2 | 2 | **4** |
-| **Líneas de código** | ~1,200 | ~800 | ~2,000 | **~4,000** |
-| **Tests manuales** | 1 | 2 | 1 | **4** |
+| Métrica | Sprint 1 | Sprint 2 | Sprint 3 | Profile-svc | **Total** |
+|---------|----------|----------|----------|-------------|-----------|
+| **Archivos nuevos** | 7 | 5 | 6 | 12 | **30** |
+| **Archivos modificados** | 8 | 5 | 8 | 2 | **23** |
+| **Endpoints nuevos** | 5 | 2 | 8 | 8 | **23** |
+| **Middlewares nuevos** | 0 | 3 | 0 | 0 | **3** |
+| **Migraciones aplicadas** | 1 | 0 | 1 | 1 | **3** |
+| **Dependencias agregadas** | 0 | 2 | 2 | 5 | **9** |
+| **Líneas de código** | ~1,200 | ~800 | ~2,000 | ~1,500 | **~5,500** |
+| **Tests manuales** | 1 | 2 | 1 | 0 | **4** |
+| **Servicios activos** | 1 | 1 | 1 | 1 | **3** |
 
 ---
 
@@ -83,17 +94,29 @@
 │    - QR Code generation                                      │
 │    - Backup codes (10)                                       │
 │    - Login integration                                       │
+└─────────────────────────────────────────────────────────────┘
+                     
+┌─────────────────────────────────────────────────────────────┐
+│                 PROFILE-SVC (Port 8082)                      │
+│  • Profile CRUD Operations                                   │
+│  • Media Upload (MinIO)                                      │
+│  • Geolocation Support                                       │
+│  • Role Management (Client/Provider)                         │
+│  • Change History Tracking                                   │
+│  • Kafka Events Integration                                  │
+│  • Prometheus Metrics                                        │
 └────────────────────┬────────────────────────────────────────┘
                      │
-         ┌───────────┼───────────┬──────────┐
-         │           │           │          │
-         ▼           ▼           ▼          ▼
-    PostgreSQL    Redis     Kafka      SMTP
-    (Port 5432)  (Port 6379) (29092)   (587)
+       ┌─────────────┼─────────────┬──────────┬─────────┐
+       │             │             │          │         │
+       ▼             ▼             ▼          ▼         ▼
+  PostgreSQL      Redis         Kafka      SMTP      MinIO
+  (Port 5432)   (Port 6379)   (29092)     (587)   (Port 9000)
     
-    • Users       • Rate Limit • Events  • Email
-    • Sessions    • Cache       • Async   • Verification
-    • 2FA Data    • 2FA sessions          • Password Reset
+  • Users         • Rate Limit  • Events   • Email   • Profile Photos
+  • Sessions      • Cache        • Async    • Verification • Media Storage
+  • 2FA Data      • 2FA sessions • Profile  • Password Reset
+  • Profiles      • Profile Cache  Events
 ```
 
 ### **Dependencias Instaladas**
@@ -108,6 +131,15 @@ prometheus-client>=0.20.0       # Sprint 2: Metrics
 ```txt
 pyotp==2.9.0                    # Sprint 3: TOTP (RFC 6238)
 qrcode[pil]==7.4.2              # Sprint 3: QR Code generation
+```
+
+#### Profile-svc (`services/profile-svc/requirements.txt`):
+```txt
+fastapi-pagination>=0.12.0      # Pagination support
+minio>=7.0.0                    # MinIO object storage client
+asyncpg>=0.29.0                 # PostgreSQL async driver
+sqlalchemy[asyncio]>=2.0.0      # ORM with async support
+kafka-python-ng>=2.2.0          # Kafka producer for events
 ```
 
 ---
@@ -224,6 +256,79 @@ qrcode[pil]==7.4.2              # Sprint 3: QR Code generation
 | GET | `/metrics` | Métricas de Prometheus |
 | GET | `/circuit-breakers` | Estado de circuit breakers |
 
+### **Profile-svc Endpoints** (8 endpoints)
+
+#### **Profile Management (6 endpoints)**
+| Método | Ruta | Descripción | Auth |
+|--------|------|-------------|------|
+| GET | `/profiles` | Listar perfiles (paginado) | ❌ |
+| POST | `/profiles` | Crear/Actualizar perfil | 🔑 JWT |
+| GET | `/profiles/{profile_id}` | Obtener perfil por ID | ❌ |
+| PUT | `/profiles/{profile_id}` | Actualizar perfil | 🔑 JWT |
+| DELETE | `/profiles/{profile_id}` | Eliminar perfil | 🔑 JWT |
+| GET | `/profiles/{profile_id}/history` | Historial de cambios | 🔑 JWT |
+
+#### **Media Management (1 endpoint)**
+| Método | Ruta | Descripción | Auth |
+|--------|------|-------------|------|
+| POST | `/profiles/{profile_id}/photo` | Subir foto de perfil | 🔑 JWT |
+
+#### **Health & Monitoring (1 endpoint)**
+| Método | Ruta | Descripción | Auth |
+|--------|------|-------------|------|
+| GET | `/health` | Health check | ❌ |
+
+#### **Profile Schema**
+```json
+{
+  "id": "uuid",
+  "user_id": "string",
+  "role": "client|provider",
+  "display_name": "string (2-100 chars)",
+  "bio": "string (max 500 chars)",
+  "city": "string",
+  "latitude": "float (-90 to 90)",
+  "longitude": "float (-180 to 180)", 
+  "services": "object (JSON)",
+  "photo_url": "string (MinIO URL)",
+  "name": "string (max 100 chars)",
+  "second_name": "string (max 100 chars)",
+  "email": "email",
+  "document_type": "string (max 20 chars)",
+  "document": "string (max 50 chars)",
+  "department": "string (max 100 chars)",
+  "postal_code": "string (max 20 chars)",
+  "street": "string (max 120 chars)",
+  "number": "string (max 20 chars)",
+  "apartment": "string (max 20 chars)",
+  "birth_date": "date",
+  "rating": "float (nullable)",
+  "rating_count": "integer",
+  "created_at": "datetime",
+  "updated_at": "datetime"
+}
+```
+
+#### **Features del Profile Service**
+- ✅ **CRUD Completo** - Crear, leer, actualizar, eliminar perfiles
+- ✅ **Roles** - Cliente (`client`) y Proveedor (`provider`)
+- ✅ **Geolocalización** - Latitud/longitud con validación de rangos
+- ✅ **Media Storage** - Subida de fotos a MinIO con limpieza automática
+- ✅ **Historial de Cambios** - Tracking completo de modificaciones
+- ✅ **Validación de Unicidad** - Email, documento y user_id únicos
+- ✅ **Paginación** - FastAPI Pagination en listados
+- ✅ **Autorización** - Solo el propietario puede modificar su perfil
+- ✅ **Eventos Kafka** - Publicación de eventos `client_registered`
+- ✅ **Métricas Prometheus** - Métricas de escritura y subida de fotos
+- ✅ **Sanitización** - Slugs seguros para nombres de archivos
+
+#### **MinIO Integration**
+- **Bucket:** `profiles`
+- **Path Pattern:** `profiles/{user_slug}/profile-{timestamp}.{ext}`
+- **Supported Formats:** Imágenes (PNG, JPG, etc.)
+- **Auto Cleanup:** Elimina fotos anteriores al subir nuevas
+- **URL Generation:** URLs públicas o endpoint directo según configuración
+
 ---
 
 ## 🗄️ Migraciones de Base de Datos
@@ -257,6 +362,57 @@ qrcode[pil]==7.4.2              # Sprint 3: QR Code generation
 
 **Indexes creados:**
 - `ix_auth_users_two_factor_enabled`
+
+### **Migration 3: Profile Service Schema** 🆕
+**Archivo:** `profile-svc/migrations/versions/*.py`  
+**Estado:** ✅ Aplicada (Auto-migration)
+**Schema:** `profiles`
+
+**Tablas creadas:**
+
+#### **`profiles.profiles`**
+- `id: UUID` (primary key)
+- `user_id: varchar(64)` (unique, not null)
+- `role: enum('client', 'provider')` (default 'client')
+- `display_name: varchar(100)` (not null)
+- `bio: varchar(500)` (nullable)
+- `city: varchar` (nullable, indexed)
+- `latitude: float` (nullable, -90 to 90)
+- `longitude: float` (nullable, -180 to 180)
+- `services: jsonb` (nullable)
+- `photo_url: varchar` (nullable)
+- `name: varchar(100)` (nullable)
+- `second_name: varchar(100)` (nullable)
+- `email: email` (nullable, unique)
+- `document_type: varchar(20)` (nullable)
+- `document: varchar(50)` (nullable, unique)
+- `department: varchar(100)` (nullable)
+- `postal_code: varchar(20)` (nullable)
+- `street: varchar(120)` (nullable)
+- `number: varchar(20)` (nullable)
+- `apartment: varchar(20)` (nullable)
+- `birth_date: date` (nullable)
+- `rating: float` (nullable)
+- `rating_count: integer` (default 0)
+- `created_at: timestamp with time zone`
+- `updated_at: timestamp with time zone`
+
+#### **`profiles.profile_history`**
+- `history_id: UUID` (primary key)
+- `profile_id: UUID` (foreign key to profiles.id)
+- `change_type: varchar` (create/update/delete)
+- `changed_by: varchar` (user_id who made change)
+- `change_origin: varchar` (default 'api')
+- `change_reason: varchar` (nullable)
+- `snapshot: jsonb` (current state)
+- `previous_snapshot: jsonb` (previous state)
+- `changed_at: timestamp with time zone`
+
+**Indexes creados:**
+- `uq_profile_user_id` (unique constraint)
+- `uq_profiles_email` (unique constraint)
+- `uq_profiles_document` (unique constraint)
+- `ix_profiles_city` (performance index)
 
 ---
 
@@ -369,6 +525,37 @@ CIRCUIT_BREAKER_HALF_OPEN_SUCCESSES=2
 RESPONSE_CACHE_ENABLED=true
 CACHE_TTL_ME=60
 CACHE_TTL_HEALTH=10
+```
+
+#### **Profile-svc (`.env`)**
+
+```bash
+# Database Configuration
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=backend
+DB_USER=backend_user
+DB_PASSWORD=backend_password
+DB_SCHEMA=profiles
+
+# MinIO Configuration (Media Storage)
+MINIO_ENABLED=true
+MINIO_ENDPOINT=localhost:9000
+MINIO_ACCESS_KEY=minio_access_key
+MINIO_SECRET_KEY=minio_secret_key
+MINIO_BUCKET=profiles
+MINIO_SECURE=false
+MINIO_PUBLIC_URL=http://localhost:9000/profiles
+
+# Kafka Configuration (Events)
+KAFKA_ENABLED=true
+KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+KAFKA_TOPIC_PROFILE_REGISTERED=profiles.client.registered.v1
+
+# Service Configuration
+APP_NAME=Profile Service
+CORS_ORIGINS=["http://localhost:3000"]
+LOG_LEVEL=INFO
 ```
 
 ---
@@ -534,16 +721,58 @@ El backend ahora cuenta con:
 - 📊 Observabilidad completa (Prometheus + Structured Logging)
 - 📧 Sistema de notificaciones (Email Verification + Password Reset)
 - 🔑 Autenticación de dos factores RFC 6238 compliant
-- 🎯 15 endpoints REST documentados
+- 👤 Sistema completo de perfiles con media storage
+- 🎯 23 endpoints REST documentados
 - 🧪 4 test suites manuales
-- 📚 5 documentos técnicos completos
+- 📚 6 documentos técnicos completos
 
 **¡El sistema está listo para recibir usuarios!** 🚀
 
 ---
 
-**Última actualización:** 2025-01-06  
-**Total de líneas de código:** ~4,000  
-**Total de endpoints:** 17 (15 auth-svc + 2 gateway)  
-**Total de features:** 14  
+## 🔧 Ejemplos de Uso - Profile Service
+
+### **Crear Perfil de Cliente**
+```bash
+curl -X POST http://localhost:8080/profiles \
+  -H "Authorization: Bearer <jwt_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "display_name": "Juan Pérez",
+    "role": "client",
+    "bio": "Dueño de 2 mascotas adorables",
+    "city": "Montevideo",
+    "latitude": -34.9011,
+    "longitude": -56.1645,
+    "email": "juan@example.com",
+    "document_type": "CI",
+    "document": "12345678"
+  }'
+```
+
+### **Subir Foto de Perfil**
+```bash
+curl -X POST http://localhost:8080/profiles/{profile_id}/photo \
+  -H "Authorization: Bearer <jwt_token>" \
+  -F "file=@photo.jpg"
+```
+
+### **Obtener Perfiles (Paginado)**
+```bash
+curl "http://localhost:8080/profiles?page=1&size=10"
+```
+
+### **Ver Historial de Cambios**
+```bash
+curl -X GET http://localhost:8080/profiles/{profile_id}/history \
+  -H "Authorization: Bearer <jwt_token>"
+```
+
+---
+
+**Última actualización:** 2025-10-10  
+**Total de líneas de código:** ~5,500  
+**Total de endpoints:** 25 (15 auth-svc + 2 gateway + 8 profile-svc)  
+**Total de features:** 22  
+**Total de servicios:** 3 (Gateway, Auth, Profiles)  
 **Coverage de documentación:** 100%
