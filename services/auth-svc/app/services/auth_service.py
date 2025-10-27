@@ -15,10 +15,13 @@ from app.services.attempts import LoginAttemptTracker
 from app.services.email_service import email_service
 from app.services.totp_service import totp_service
 from app.services.two_factor_session import two_factor_session_manager
+from app.services.otp_service import otp_service
 from app.core.config import settings
 import secrets
 from uuid import UUID
 import logging
+from app.events.kafka import bus
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +73,20 @@ class AuthService:
             user_name=user.full_name,
             token=verification_token
         )
+
+        # Optionally expose the verification token in development for local testing.
+        # Controlled by the EXPOSE_DEV_VERIFICATION_TOKEN env var (default: false).
+        if getattr(settings, "expose_dev_verification_token", False):
+            logger.info("verification_token_generated", extra={"user_id": str(user.id), "token": verification_token})
+            u = UserOut(
+                id=str(user.id),
+                email=user.email,
+                full_name=user.full_name,
+                status=user.status.value if hasattr(user.status, "value") else str(user.status),
+                created_at=getattr(user, "created_at", None),
+            )
+            # Attach token for dev convenience
+            return {"user": u, "verification_token": verification_token}
 
         return UserOut(
             id=str(user.id),
@@ -156,17 +173,35 @@ class AuthService:
         await self.attempts.reset(norm, client_ip)
         await self.users.reset_failed_attempts(user.id)
 
+        # 3.1) Verificar si el email está verificado
+        # Si el flujo requiere verificación de email (por política), impedir login hasta que se verifique.
+        if not user.email_verified:
+            # No permitir login hasta verificar el email
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "EMAIL_NOT_VERIFIED",
+                    "message": "El email no está verificado. Revisa tu correo o solicita reenvío de verificación."
+                }
+            )
+
         # 3.5) VERIFICAR SI TIENE 2FA HABILITADO
         if user.two_factor_enabled:
             # NO generar tokens todavía, crear sesión temporal
             temp_session_id = await two_factor_session_manager.create_pending_session(
                 user_id=str(user.id),
                 user_agent=user_agent,
-                ip=ip
+                ip=ip,
             )
+            # Generate and send OTP via email for initial email-based 2FA flow
+            try:
+                await otp_service.create_and_send(temp_session_id, to_email=user.email)
+            except Exception:
+                logger.exception("failed_to_send_otp_email")
+
             logger.info(
                 "2fa_required_for_login",
-                extra={"user_id": str(user.id), "email": user.email}
+                extra={"user_id": str(user.id), "email": user.email},
             )
             # Retornar un valor especial que el endpoint interpretará
             # Usamos una tupla de 2 elementos: (requires_2fa, temp_session_id)
@@ -187,6 +222,46 @@ class AuthService:
             ip=ip,
             expires_at=expires,
         )
+        return access, str(session.id), raw, expires
+
+    async def issue_tokens_for_pending_session(self, temp_session_id: str) -> tuple[str, str, str, datetime]:
+        """
+        After a pending session has been validated (e.g. OTP validated),
+        issue access + refresh tokens for the user referenced by the pending session.
+        Returns: access, session_id, raw_refresh, expires
+        """
+        if self.sessions is None:
+            raise RuntimeError("UserSessionRepo no inyectado")
+
+        pending = await two_factor_session_manager.get_pending_session(temp_session_id)
+        if not pending:
+            raise HTTPException(status_code=400, detail="Sesión 2FA inválida o expirada")
+
+        user_id = pending.get("user_id")
+        user_agent = pending.get("user_agent")
+        ip = pending.get("ip")
+
+        user = await self.users.get_by_id(user_id)
+        if not user:
+            raise HTTPException(status_code=400, detail="Usuario no encontrado")
+
+        # delete pending session
+        await two_factor_session_manager.delete_pending_session(temp_session_id)
+
+        # generate tokens
+        access = create_access_token(sub=str(user.id))
+        raw = generate_refresh_token_raw()
+        rhash = hash_refresh_token(raw)
+        expires = datetime.now(timezone.utc) + timedelta(seconds=1209600)
+
+        session = await self.sessions.create(
+            user_id=str(user.id),
+            refresh_token_hash=rhash,
+            user_agent=user_agent,
+            ip=ip,
+            expires_at=expires,
+        )
+
         return access, str(session.id), raw, expires
 
     async def refresh_rotate(self, session_id: str, raw_token: str, *, user_agent: str | None, ip: str | None):
@@ -212,7 +287,7 @@ class AuthService:
         new_raw = generate_refresh_token_raw()
         new_hash = hash_refresh_token(new_raw)
         new_exp = now + timedelta(seconds=1209600)
-
+        # Persist rotation in DB and issue a new access token
         await self.sessions.rotate_token(session_id, new_hash, new_exp)
 
         # nuevo access
@@ -347,15 +422,45 @@ class AuthService:
         user = await self.users.get_by_verification_token(token)
         if not user:
             raise EmailVerificationError("Token de verificación inválido o expirado")
-        
-        # Verificar si el token no ha expirado (24 horas)
+
+        # Verificar si el token no ha expirado (configurable)
         if user.email_verification_sent_at:
             token_age = datetime.now(timezone.utc) - user.email_verification_sent_at
             if token_age > timedelta(minutes=settings.email_verification_token_ttl_minutes):
                 raise EmailVerificationError("El token de verificación ha expirado")
-        
+
         # Marcar email como verificado
         await self.users.verify_email(user.id)
+
+        # Publish domain event to Kafka (best-effort). This is useful for other services to react
+        # e.g., profile-svc can listen for this event and mark profile as email_verified.
+        try:
+            await bus.publish(
+                settings.user_verified_topic,
+                key=str(user.id),
+                value={
+                    "event": "user_verified",
+                    "version": 1,
+                    "user_id": str(user.id),
+                    "email": user.email,
+                    "occurred_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                },
+            )
+        except Exception:
+            logger.exception("failed_to_publish_user_verified_event")
+
+        # Also try an immediate sync to profile-svc internal endpoint if configured (best-effort).
+        if settings.profile_svc_url:
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    url = settings.profile_svc_url.rstrip("/") + "/internal/profiles/verify"
+                    payload = {"user_id": str(user.id), "email": user.email}
+                    resp = await client.post(url, json=payload)
+                    if resp.status_code >= 400:
+                        logger.warning("profile_sync_failed", extra={"status_code": resp.status_code, "text": resp.text})
+            except Exception:
+                logger.exception("profile_sync_request_failed")
+
         return True
 
     async def resend_verification_email(self, email: str) -> bool:

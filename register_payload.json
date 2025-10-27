@@ -1,0 +1,21 @@
+﻿{
+  "baseUser": {
+    "name": "Martin",
+    "secondName": "Estefanell",
+    "email": "test+local@example.com",
+    "documentType": "DNI",
+    "document": "12345678",
+    "ubication": {
+      "department": "CABA",
+      "city": "Buenos Aires",
+      "postalCode": "C1000",
+      "street": "Av. Siempre Viva",
+      "number": "742",
+      "apartment": "1A"
+    },
+    "password": "Password123!"
+  },
+  "client": {
+    "birthDate": "1990-01-01"
+  }
+}

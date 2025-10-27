@@ -1,5 +1,6 @@
 # services/auth-svc/app/main.py
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 import uuid
@@ -54,9 +55,28 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="auth-svc", lifespan=lifespan)
 
-# --- CORS REMOVIDO ---
-# El Gateway maneja CORS para todos los servicios.
-# No es necesario duplicar la configuración aquí.
+# --- CORS: habilitar en dev cuando el frontend llama directamente al servicio ---
+# El gateway suele encargarse de CORS en despliegues con proxy, pero en
+# desarrollo (cuando el frontend tests/vite llama a auth-svc en localhost:8080)
+# necesitamos permitir el origen del frontend y enviar credenciales.
+try:
+    origins = []
+    if settings.cors_allowed_origins:
+        origins = [o.strip() for o in settings.cors_allowed_origins.split(",") if o.strip()]
+    elif settings.frontend_url:
+        origins = [settings.frontend_url]
+
+    if origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_credentials=True,
+            allow_methods=[m.strip() for m in (settings.cors_allowed_methods or "*").split(",") if m.strip()] or ["*"],
+            allow_headers=[h.strip() for h in (settings.cors_allowed_headers or "*").split(",") if h.strip()] or ["*"],
+        )
+        logger.info("cors_configured", extra={"origins": origins})
+except Exception:
+    logger.exception("cors_configuration_failed")
 
 # --- Request-Id + access log ---
 @app.middleware("http")

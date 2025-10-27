@@ -112,8 +112,13 @@ class EmailService:
         Returns:
             True si se envió correctamente
         """
-        verification_url = f"{self.frontend_url}/verify-email?token={token}"
-        
+        # Primary action: call backend GET verify endpoint (via gateway) so
+        # the backend performs verification and then redirects to the
+        # frontend result page. This is more robust in local dev where
+        # the frontend port may differ from settings.frontend_url.
+        backend_verify = f"{settings.gateway_url.rstrip('/')}/api/v1/auth/verify-email?token={token}"
+        frontend_verify = f"{self.frontend_url.rstrip('/')}/verify-email?token={token}"
+
         subject = "Verifica tu email - Mi Mascota"
         
         html_content = f"""
@@ -132,15 +137,21 @@ class EmailService:
                 <p>Gracias por registrarte en Mi Mascota. Para completar tu registro, necesitamos verificar tu email.</p>
                 
                 <div style="text-align: center; margin: 30px 0;">
-                    <a href="{verification_url}" 
+                    <!-- Botón que apunta al endpoint de verificación del backend (gateway) -->
+                    <a href="{backend_verify}" 
                        style="background-color: #4CAF50; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">
                         Verificar mi email
                     </a>
                 </div>
                 
-                <p>O copia y pega este enlace en tu navegador:</p>
+                <p>Si el botón no funciona, podés usar uno de estos enlaces:</p>
                 <p style="background-color: #e9ecef; padding: 10px; border-radius: 5px; word-break: break-all;">
-                    {verification_url}
+                    Enlace de verificación (vía backend - recomendado):<br>
+                    {backend_verify}
+                </p>
+                <p style="background-color: #e9ecef; padding: 10px; border-radius: 5px; word-break: break-all; margin-top:8px;">
+                    Enlace directo al frontend (si lo preferís):<br>
+                    {frontend_verify}
                 </p>
                 
                 <p style="color: #666; font-size: 14px; margin-top: 30px;">
@@ -159,6 +170,8 @@ class EmailService:
         </html>
         """
         
+        verification_url = backend_verify
+
         text_content = f"""
         ¡Bienvenido a Mi Mascota!
         
@@ -175,7 +188,7 @@ class EmailService:
         ---
         Mi Mascota
         """
-        
+
         return await self.send_email(to_email, subject, html_content, text_content)
     
     async def send_password_reset_email(self, to_email: str, token: str, user_name: str) -> bool:

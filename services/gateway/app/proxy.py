@@ -8,6 +8,7 @@ from fastapi import Request, HTTPException
 from fastapi.responses import Response
 from app.middleware.circuit_breaker import get_circuit_breaker
 from app.middleware.metrics import record_backend_request, record_backend_error
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +100,51 @@ async def proxy_request(
                     status_code=backend_response.status_code,
                     headers=dict(backend_response.headers),
                 )
-                
+
+                # Ensure CORS headers are present on proxied responses when origin is allowed.
+                # Improve matching to support patterns like 'http://*:5173' and ensure
+                # canonical header casing so browsers pick them up reliably.
+                try:
+                    origin = request.headers.get("origin")
+                    if origin:
+                        # Normalize origin (remove trailing slash)
+                        norm_origin = origin.rstrip("/")
+
+                        raw_allowed = getattr(settings, "cors_origins", "") or ""
+                        allowed = [o.strip() for o in raw_allowed.split(",") if o.strip()]
+
+                        def origin_matches(pattern: str, origin_value: str) -> bool:
+                            # Exact wildcard
+                            if pattern == "*":
+                                return True
+                            # Simple pattern like http://*:5173 -> match scheme and port
+                            if "*" in pattern:
+                                # Replace '*' with a regex-like wildcard for simple matching
+                                parts = pattern.split("*")
+                                if len(parts) == 2:
+                                    return origin_value.startswith(parts[0]) and origin_value.endswith(parts[1])
+                                return False
+                            # Exact match
+                            return pattern.rstrip("/") == origin_value
+
+                        matched = any(origin_matches(p, norm_origin) for p in allowed)
+
+                        if matched:
+                            # Use canonical header names. Don't overwrite if backend already set them.
+                            response.headers.setdefault("Access-Control-Allow-Origin", "*" if "*" in allowed else norm_origin)
+                            response.headers.setdefault("Access-Control-Allow-Credentials", "true")
+
+                            # For preflight, populate allowed methods/headers if not present
+                            if request.method == "OPTIONS":
+                                response.headers.setdefault("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
+                                acrh = request.headers.get("access-control-request-headers")
+                                if acrh:
+                                    response.headers.setdefault("Access-Control-Allow-Headers", acrh)
+                                else:
+                                    response.headers.setdefault("Access-Control-Allow-Headers", "*")
+                except Exception:
+                    logger.exception("Error while injecting CORS headers into proxied response")
+
                 return response
                 
         except httpx.TimeoutException as e:

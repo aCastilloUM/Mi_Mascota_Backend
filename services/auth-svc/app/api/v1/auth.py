@@ -1,6 +1,6 @@
-# services/auth-svc/app/api/v1/auth.py
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.encoders import jsonable_encoder
 import jwt
 import logging
 import time
@@ -22,6 +22,9 @@ from app.api.v1.schemas import (
 from app.core.security import decode_token, build_refresh_cookie_value, parse_refresh_cookie_value
 from app.core.config import settings
 from app.events.kafka import bus
+from app.services.otp_service import otp_service
+from app.services.two_factor_session import two_factor_session_manager
+from app.api.v1.schemas_2fa import Validate2FARequest, Validate2FAResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -53,6 +56,18 @@ async def register_user(payload: RegisterRequest, request: Request, session: Asy
     try:
         _ = payload.client.birthdate_as_date()
         user = await svc.register(payload)
+        # If the service returned a development-only payload including verification_token,
+        # return a JSONResponse that includes the token (bypass response_model filtering).
+        if isinstance(user, dict) and user.get("verification_token"):
+            # user['user'] may already be a UserOut-like object or dict
+            raw_user = user.get("user")
+            out = UserOut.model_validate(raw_user)
+            from fastapi.responses import JSONResponse
+            payload_out = out.model_dump()
+            payload_out["verification_token"] = user.get("verification_token")
+            # Ensure datetimes are converted to JSON-serializable types
+            return JSONResponse(content=jsonable_encoder(payload_out), status_code=status.HTTP_201_CREATED)
+
         out = UserOut.model_validate(user)
 
         # ---- Kafka: user_registered ----
@@ -189,6 +204,69 @@ async def login_2fa(
         raise
     except Exception:
         logger.exception("Fallo en /api/v1/auth/login/2fa")
+        raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR"})
+
+
+@router.post("/2fa/send-otp")
+async def send_otp(
+    payload: Validate2FARequest,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """Enviar o re-enviar OTP por email para una sesión temporal de 2FA."""
+    try:
+        pending = await two_factor_session_manager.get_pending_session(payload.session_id)
+        if not pending:
+            raise HTTPException(status_code=400, detail={"code": "INVALID_SESSION", "message": "Sesión temporal inválida o expirada"})
+
+        user_repo = UserRepo(session)
+        user = await user_repo.get_by_id(pending.get("user_id"))
+        if not user:
+            raise HTTPException(status_code=400, detail={"code": "INVALID_SESSION", "message": "Usuario no encontrado"})
+
+        can = await otp_service.can_resend(payload.session_id)
+        if not can:
+            raise HTTPException(status_code=429, detail={"code": "OTP_RESEND_COOLDOWN", "message": "Reenvío bloqueado temporalmente. Intentá más tarde."})
+
+        sent = await otp_service.create_and_send(payload.session_id, to_email=user.email)
+        if not sent:
+            raise HTTPException(status_code=500, detail={"code": "EMAIL_SEND_FAILED", "message": "No se pudo enviar el email. Contactá soporte."})
+
+        return {"ok": True, "message": "OTP enviado (si el email está disponible)."}
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Fallo en /api/v1/auth/2fa/send-otp")
+        raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR"})
+
+
+@router.post("/2fa/verify-otp", response_model=TokenResponse)
+async def verify_otp(
+    payload: Validate2FARequest,
+    request: Request,
+    response: Response,
+    session: AsyncSession = Depends(get_session),
+):
+    """Verificar OTP enviado por email y emitir tokens finales."""
+    svc = AuthService(UserRepo(session), UserSessionRepo(session))
+    try:
+        # Validate OTP against Redis
+        valid = await otp_service.validate(payload.session_id, payload.token)
+        if not valid:
+            raise HTTPException(status_code=400, detail={"code": "INVALID_OTP", "message": "Código OTP inválido o expirado"})
+
+        # Issue tokens
+        access, session_id, raw, exp = await svc.issue_tokens_for_pending_session(payload.session_id)
+
+        # set cookie with refresh
+        max_age = settings.refresh_token_ttl_seconds
+        _set_refresh_cookie(response, session_id, raw, max_age_s=max_age)
+
+        return TokenResponse(access_token=access)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Fallo en /api/v1/auth/2fa/verify-otp")
         raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR"})
 
 @router.post("/refresh", response_model=TokenResponse)

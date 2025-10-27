@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     # Kafka
     kafka_bootstrap_servers: str = Field(alias="KAFKA_BOOTSTRAP_SERVERS")
     user_registered_topic: str = Field(default="user.registered.v1", alias="USER_REGISTERED_TOPIC")
+    # Topic published when a user verifies their email
+    user_verified_topic: str = Field(default="user.verified.v1", alias="USER_VERIFIED_TOPIC")
+    # Optional profile service URL used for immediate sync (internal endpoint). If unset, auth-svc will only publish the event.
+    profile_svc_url: str = Field(default="", alias="PROFILE_SVC_URL")
+    # Whether to include the verification_token in the register response for development convenience.
+    expose_dev_verification_token: bool = Field(default=False, alias="EXPOSE_DEV_VERIFICATION_TOKEN")
     
     # Email configuration
     smtp_host: str = Field(default="smtp.gmail.com", alias="SMTP_HOST")
@@ -51,8 +57,10 @@ class Settings(BaseSettings):
     smtp_from_email: str = Field(default="noreply@mimascota.com", alias="SMTP_FROM_EMAIL")
     smtp_from_name: str = Field(default="Mi Mascota", alias="SMTP_FROM_NAME")
     
-    # Frontend URL for email links
-    frontend_url: str = Field(default="http://localhost:3000", alias="FRONTEND_URL")
+    # Frontend URL for email links (dev default points to Vite dev server)
+    frontend_url: str = Field(default="http://localhost:5173", alias="FRONTEND_URL")
+    # Gateway (reverse proxy) URL used in email links to call backend via gateway
+    gateway_url: str = Field(default="http://localhost:8080", alias="GATEWAY_URL")
     
     # Token expiration times (in minutes)
     email_verification_token_ttl_minutes: int = Field(default=1440, alias="EMAIL_VERIFICATION_TOKEN_TTL_MINUTES")  # 24 hours
@@ -61,6 +69,12 @@ class Settings(BaseSettings):
     # Account locking
     account_lock_threshold: int = Field(default=10, alias="ACCOUNT_LOCK_THRESHOLD")  # Lock after 10 failed attempts
     account_lock_duration_minutes: int = Field(default=30, alias="ACCOUNT_LOCK_DURATION_MINUTES")
+
+    # OTP (email) settings
+    otp_length: int = Field(default=6, alias="OTP_LENGTH")
+    otp_ttl_seconds: int = Field(default=300, alias="OTP_TTL_SECONDS")
+    otp_resend_cooldown: int = Field(default=60, alias="OTP_RESEND_COOLDOWN")
+    max_otp_attempts: int = Field(default=5, alias="MAX_OTP_ATTEMPTS")
 
     model_config = SettingsConfigDict(
         env_file=os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", ".env"),

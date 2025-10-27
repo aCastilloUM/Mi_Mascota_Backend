@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     KAFKA_BOOTSTRAP: str = "kafka:9092"
     KAFKA_CLIENT_ID: str = "profiles-svc"
     KAFKA_TOPIC_PROFILE_REGISTERED: str = "profiles.client.registered.v1"
+    # Topic to consume when a user verifies their email in auth-svc
+    KAFKA_TOPIC_USER_VERIFIED: str = "user.verified.v1"
 
     # --- Media storage (MinIO/S3 compatible) ---
     MINIO_ENABLED: bool = False

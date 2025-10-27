@@ -20,6 +20,8 @@ PUBLIC_PATHS = [
     "/api/v1/auth/refresh",
     "/api/v1/auth/forgot-password",
     "/api/v1/auth/reset-password",
+    # Make verify-email public so users can verify from the frontend link
+    "/api/v1/auth/verify-email",
 ]
 
 
@@ -68,6 +70,11 @@ async def auth_middleware(request: Request, call_next):
     Agrega headers X-User-ID y X-User-Email para los servicios backend.
     """
     path = request.url.path
+    # Allow preflight requests to pass through without authentication so CORS
+    # handling (CORSMiddleware) can respond correctly. Browsers send OPTIONS
+    # preflight requests without Authorization headers.
+    if request.method == "OPTIONS":
+        return await call_next(request)
     
     # Rutas públicas: no requieren autenticación
     if is_public_path(path):
