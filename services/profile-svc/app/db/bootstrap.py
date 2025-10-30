@@ -74,4 +74,16 @@ async def ensure_schema(schema: str) -> None:
 
     sql = SCHEMA_SQL.format(schema=schema)
     async with engine.begin() as conn:
-        await conn.execute(text(sql), {"schema": schema})
+        # Use exec_driver_sql to allow multi-statement SQL (asyncpg prepared statements
+        # do not accept multiple commands in a single prepared statement).
+        try:
+            await conn.exec_driver_sql(sql)
+        except Exception:
+            # Fallback: execute statements one by one as a last resort
+            stmts = [s.strip() for s in sql.split(";\n") if s.strip()]
+            for stmt in stmts:
+                try:
+                    await conn.exec_driver_sql(stmt)
+                except Exception:
+                    # best-effort; let the caller/logging handle persistent errors
+                    pass

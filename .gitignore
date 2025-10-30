@@ -1,0 +1,8 @@
+﻿# Cleanup rules added by cleanup script
+__pycache__/
+*.pyc
+.venv/
+*.log
+*.sqlite
+*.db
+deploy/photon-src/

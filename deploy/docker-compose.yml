@@ -182,10 +182,6 @@ services:
       # Misc
       REQUEST_ID_HEADER: X-Request-Id
       USER_REGISTERED_TOPIC: user.registered
-      # Frontend url used by auth-svc when building redirect links from emails
-      FRONTEND_URL: http://localhost:5173
-      # In development, allow returning the verification token in register responses when true
-      EXPOSE_DEV_VERIFICATION_TOKEN: "true"
     depends_on:
       postgres:
         condition: service_healthy
