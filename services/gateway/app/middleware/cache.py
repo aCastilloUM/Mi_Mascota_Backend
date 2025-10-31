@@ -93,7 +93,7 @@ class CacheMiddleware(BaseHTTPMiddleware):
                     content=cached_data["body"],
                     status_code=cached_data["status_code"],
                     headers={
-                        **cached_data.get("headers", {}),
+                        **{k: v for k, v in (cached_data.get("headers", {}) or {}).items() if k.lower() != 'content-length'},
                         "X-Cache": "HIT"
                     }
                 )
@@ -149,13 +149,12 @@ class CacheMiddleware(BaseHTTPMiddleware):
                 )
                 
                 # Retornar response con body reconstruido
+                new_headers = {k: v for k, v in dict(response.headers).items() if k.lower() != 'content-length'}
+                new_headers.update({"X-Cache": "MISS"})
                 return Response(
                     content=body,
                     status_code=response.status_code,
-                    headers={
-                        **dict(response.headers),
-                        "X-Cache": "MISS"
-                    },
+                    headers=new_headers,
                     media_type=response.media_type
                 )
                 
