@@ -95,13 +95,14 @@ services:
     depends_on:
       - elasticsearch
 
-  adminer:
-    image: adminer
-    restart: always
-    ports:
-      - "8081:8080"
-    depends_on:
-      - postgres
+  # adminer (disabled)
+  # adminer:
+  #   image: adminer
+  #   restart: always
+  #   ports:
+  #     - "8081:8080"
+  #   depends_on:
+  #     - postgres
 
   # adminer:
   #   image: adminer
@@ -132,8 +133,6 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
     depends_on:
-      postgres:
-        condition: service_healthy
       kafka:
         condition: service_started
       minio:
@@ -193,8 +192,6 @@ services:
       REQUEST_ID_HEADER: X-Request-Id
       USER_REGISTERED_TOPIC: user.registered
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
       kafka:
