@@ -16,6 +16,7 @@ from app.api.v1 import two_factor
 from app.api.health import router as ops_router
 from app.events.kafka import bus
 from app.infra.redis import redis_client
+from prometheus_fastapi_instrumentator import Instrumentator
 
 setup_logging()
 logger = logging.getLogger("auth-svc")
@@ -54,6 +55,12 @@ async def lifespan(app: FastAPI):
     logger.info("service_stop")
 
 app = FastAPI(title="auth-svc", lifespan=lifespan)
+
+# Expose Prometheus metrics at /metrics
+try:
+    Instrumentator().instrument(app).expose(app, include_in_schema=False, endpoint="/metrics")
+except Exception:
+    logger.exception("prometheus_instrumentation_failed")
 
 # --- CORS: habilitar en dev cuando el frontend llama directamente al servicio ---
 # El gateway suele encargarse de CORS en despliegues con proxy, pero en

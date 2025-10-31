@@ -95,6 +95,71 @@ services:
     depends_on:
       - elasticsearch
 
+  # ----------------- MONITORING (Prometheus + Grafana + Exporters) -----------------
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:9.0.0
+    container_name: grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
+    restart: unless-stopped
+
+  postgres-exporter:
+    image: wrouesnel/postgres_exporter:latest
+    container_name: postgres-exporter
+    environment:
+      DATA_SOURCE_NAME: "postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
+    ports:
+      - "9187:9187"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:latest
+    container_name: kafka-exporter
+    environment:
+      KAFKA_BROKERS: "kafka:9092"
+    ports:
+      - "9308:9308"
+    depends_on:
+      - kafka
+    restart: unless-stopped
+
+  elasticsearch-exporter:
+    image: justwatch/elasticsearch_exporter:1.2.0
+    container_name: elasticsearch-exporter
+    environment:
+      - ELASTICSEARCH_URI=http://elasticsearch:9200
+    ports:
+      - "9114:9114"
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
   # adminer (disabled)
   # adminer:
   #   image: adminer
@@ -257,3 +322,5 @@ services:
 volumes:
   pgdata:
   minio-data:
+  prometheus-data:
+  grafana-data:
