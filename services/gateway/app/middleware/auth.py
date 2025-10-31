@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 # Rutas públicas que NO requieren autenticación
 PUBLIC_PATHS = [
     "/health",
+    "/metrics",
     "/api/v1/auth/register",
     "/api/v1/auth/login",
     "/api/v1/auth/refresh",
