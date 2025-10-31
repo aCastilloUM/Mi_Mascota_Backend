@@ -48,6 +48,7 @@ class CacheMiddleware(BaseHTTPMiddleware):
             "/api/v1/auth/forgot-password",
             "/api/v1/auth/reset-password",
             "/api/v1/auth/change-password",
+            "/metrics",
         }
     
     async def dispatch(self, request: Request, call_next):
