@@ -1,0 +1,18 @@
+services:
+  auth-svc:
+    env_file:
+      - ../services/auth-svc/.env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - DB_SCHEMA=${DB_SCHEMA}
+  profiles-svc:
+    env_file:
+      - ../services/profile-svc/.env
+    environment:
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - DB_SCHEMA=${DB_SCHEMA}
+      - KAFKA_ENABLED=${KAFKA_ENABLED}
