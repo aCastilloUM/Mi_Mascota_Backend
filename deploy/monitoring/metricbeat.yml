@@ -1,0 +1,15 @@
+metricbeat.modules:
+- module: elasticsearch
+  metricsets: [cluster_stats, node_stats, node_disk]
+  period: 10s
+  hosts: ["http://elasticsearch:9200"]
+
+output.elasticsearch:
+  # Send metrics to local Elasticsearch
+  hosts: ["http://elasticsearch:9200"]
+
+setup.kibana:
+  host: "http://kibana:5601"
+
+# Disable local dashboards setup if you don't want automatic dashboards
+#setup.dashboards.enabled: true

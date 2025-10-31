@@ -149,11 +149,24 @@ services:
       - kafka
     restart: unless-stopped
 
+  metricbeat:
+    image: docker.elastic.co/beats/metricbeat:8.14.1
+    container_name: metricbeat
+    user: root
+    volumes:
+      - ./monitoring/metricbeat.yml:/usr/share/metricbeat/metricbeat.yml:ro
+    depends_on:
+      - elasticsearch
+      - kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    restart: unless-stopped
+
   elasticsearch-exporter:
-    image: justwatch/elasticsearch_exporter:1.2.0
+    image: prometheuscommunity/elasticsearch-exporter:1.4.0
     container_name: elasticsearch-exporter
     environment:
-      - ELASTICSEARCH_URI=http://elasticsearch:9200
+      ELASTICSEARCH_URI: "http://elasticsearch:9200"
     ports:
       - "9114:9114"
     depends_on:
