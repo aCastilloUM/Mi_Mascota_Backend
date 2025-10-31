@@ -1,5 +1,6 @@
 # services/auth-svc/app/services/auth.py
 from datetime import date, datetime, timedelta, timezone
+import time
 from fastapi import HTTPException
 from app.api.v1.schemas import RegisterRequest, UserOut
 from app.core.security import (
@@ -21,6 +22,7 @@ import secrets
 from uuid import UUID
 import logging
 from app.events.kafka import bus
+import asyncio
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -59,20 +61,34 @@ class AuthService:
         pwd_hash = hash_password(payload.baseUser.password)
 
         try:
+            start_create = time.perf_counter()
             user = await self.users.create(email=email, password_hash=pwd_hash, full_name=full_name)
+            create_ms = int((time.perf_counter() - start_create) * 1000)
+            logger.info("user_create_duration_ms", extra={"ms": create_ms, "email": email})
         except EmailAlreadyExists:
             raise InvalidRegistration("Ese email ya tiene cuenta")
 
         # Generar token de verificación y enviar email
         verification_token = secrets.token_urlsafe(32)
-        await self.users.update_email_verification_token(user.id, verification_token)
-        
-        # Enviar email de verificación (async sin await para no bloquear)
-        await email_service.send_verification_email(
-            to_email=user.email,
-            user_name=user.full_name,
-            token=verification_token
-        )
+        try:
+            start_token = time.perf_counter()
+            await self.users.update_email_verification_token(user.id, verification_token)
+            token_ms = int((time.perf_counter() - start_token) * 1000)
+            logger.info("update_email_verification_token_duration_ms", extra={"ms": token_ms, "user_id": str(user.id)})
+        except Exception:
+            logger.exception("failed_update_email_verification_token")
+
+        # Enviar email de verificación en background (no await) para no bloquear
+        try:
+            asyncio.create_task(
+                email_service.send_verification_email(
+                    to_email=user.email,
+                    user_name=user.full_name,
+                    token=verification_token
+                )
+            )
+        except Exception:
+            logger.exception("failed_to_schedule_verification_email")
 
         # Optionally expose the verification token in development for local testing.
         # Controlled by the EXPOSE_DEV_VERIFICATION_TOKEN env var (default: false).

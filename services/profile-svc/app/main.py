@@ -11,7 +11,6 @@ from app.core.kafka import get_producer, stop_producer
 from app.core.consumer import start_consumer, stop_consumer
 from app.core.logging import setup_logging
 from app.routers import health, profiles
-from app.routers import internal as internal_router
 from app.db.bootstrap import ensure_schema
 
 setup_logging(settings.LOG_LEVEL)
@@ -28,12 +27,12 @@ async def lifespan(app: FastAPI):
     if settings.KAFKA_ENABLED:
         try:
             await get_producer()
+            try:
+                await start_consumer()
+            except Exception:
+                logger.exception("Kafka consumer start failed")
         except Exception:
             logger.exception("Kafka producer start failed")
-        try:
-            await start_consumer()
-        except Exception:
-            logger.exception("Failed to start user_verified consumer")
     else:
         logger.info("Kafka disabled; skipping producer startup")
 
@@ -48,7 +47,7 @@ async def lifespan(app: FastAPI):
             try:
                 await stop_consumer()
             except Exception:
-                logger.exception("Failed to stop user_verified consumer")
+                logger.exception("Kafka consumer stop failed")
         else:
             logger.debug("Kafka disabled; no producer to stop")
 
@@ -69,5 +68,4 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(profiles.router)
-app.include_router(internal_router.router)
 add_pagination(app)

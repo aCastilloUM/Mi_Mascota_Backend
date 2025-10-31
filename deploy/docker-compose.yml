@@ -95,13 +95,22 @@ services:
     depends_on:
       - elasticsearch
 
-  adminer:
-    image: adminer
-    restart: always
-    ports:
-      - "8081:8080"
-    depends_on:
-      - postgres
+  # adminer (disabled)
+  # adminer:
+  #   image: adminer
+  #   restart: always
+  #   ports:
+  #     - "8081:8080"
+  #   depends_on:
+  #     - postgres
+
+  # adminer:
+  #   image: adminer
+  #   restart: always
+  #   ports:
+  #     - "8081:8080"
+  #   depends_on:
+  #     - postgres
 
   # ==================== MICROSERVICIOS ====================
   
@@ -109,13 +118,14 @@ services:
     build:
       context: ../services/profile-svc
     container_name: profiles-svc
-    env_file:
-      - ../services/profile-svc/.env
+    # Use Railway DB for profiles (no override file).
     environment:
-      DB_HOST: postgres
-      DB_USER: app
-      DB_PASSWORD: app
-      DB_NAME: appdb
+      DB_HOST: "shinkansen.proxy.rlwy.net"
+      DB_PORT: "57241"
+      DB_USER: "postgres"
+      DB_PASSWORD: "nHvixZvWWCaLFpXwTFsRrXMXXkETCEoI"
+      DB_NAME: "railway"
+      DB_SCHEMA: "profiles"
       KAFKA_ENABLED: "true"
       MINIO_ENABLED: "true"
       MINIO_ENDPOINT: minio:9000
@@ -123,8 +133,6 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
     depends_on:
-      postgres:
-        condition: service_healthy
       kafka:
         condition: service_started
       minio:
@@ -149,8 +157,9 @@ services:
     ports:
       - "8006:8006"
     environment:
-      # Database
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # Database - use Railway directly (no override)
+      DATABASE_URL: "postgresql+asyncpg://postgres:nHvixZvWWCaLFpXwTFsRrXMXXkETCEoI@shinkansen.proxy.rlwy.net:57241/railway"
+      DB_SCHEMA: "auth"
       
       # Redis
       REDIS_URL: redis://redis:6379/0
@@ -182,13 +191,7 @@ services:
       # Misc
       REQUEST_ID_HEADER: X-Request-Id
       USER_REGISTERED_TOPIC: user.registered
-      # Frontend url used by auth-svc when building redirect links from emails
-      FRONTEND_URL: http://localhost:5173
-      # In development, allow returning the verification token in register responses when true
-      EXPOSE_DEV_VERIFICATION_TOKEN: "true"
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
       kafka:
