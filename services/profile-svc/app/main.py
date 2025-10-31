@@ -12,6 +12,7 @@ from app.core.consumer import start_consumer, stop_consumer
 from app.core.logging import setup_logging
 from app.routers import health, profiles
 from app.db.bootstrap import ensure_schema
+from prometheus_fastapi_instrumentator import Instrumentator
 
 setup_logging(settings.LOG_LEVEL)
 logger = logging.getLogger(__name__)
@@ -57,6 +58,12 @@ app = FastAPI(
     default_response_class=ORJSONResponse,
     lifespan=lifespan,
 )
+
+# Expose Prometheus metrics at /metrics
+try:
+    Instrumentator().instrument(app).expose(app, include_in_schema=False, endpoint="/metrics")
+except Exception:
+    logger.exception("prometheus_instrumentation_failed")
 
 app.add_middleware(
     CORSMiddleware,
