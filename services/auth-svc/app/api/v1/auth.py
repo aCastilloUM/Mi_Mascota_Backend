@@ -5,6 +5,7 @@ import jwt
 import logging
 import time
 import uuid
+import asyncio
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import get_session
@@ -55,7 +56,11 @@ async def register_user(payload: RegisterRequest, request: Request, session: Asy
     svc = AuthService(UserRepo(session), UserSessionRepo(session))
     try:
         _ = payload.client.birthdate_as_date()
+        # Measure time spent in register service to diagnose slow operations
+        start = time.perf_counter()
         user = await svc.register(payload)
+        duration_ms = int((time.perf_counter() - start) * 1000)
+        logger.info("register_service_duration_ms", extra={"duration_ms": duration_ms, "request_id": getattr(request.state, "request_id", "-")})
         # If the service returned a development-only payload including verification_token,
         # return a JSONResponse that includes the token (bypass response_model filtering).
         if isinstance(user, dict) and user.get("verification_token"):
@@ -72,6 +77,8 @@ async def register_user(payload: RegisterRequest, request: Request, session: Asy
 
         # ---- Kafka: user_registered ----
         try:
+            # Schedule Kafka publish as a background task so registration
+            # response is not delayed by Kafka connectivity or retries.
             event_id = str(uuid.uuid4())
             now_ms = int(time.time() * 1000)
             headers = [
@@ -80,38 +87,53 @@ async def register_user(payload: RegisterRequest, request: Request, session: Asy
                 ("content-type", b"application/json"),
                 ("request-id", getattr(request.state, "request_id", "-").encode("utf-8")),
             ]
-            await bus.publish(
-                settings.user_registered_topic,
-                key=out.id,  # particiona por usuario
-                value={
-                    "event": "user_registered",
-                    "id": event_id,
-                    "ts": now_ms,
-                    "v": 1,
-                    "payload": {
-                        "user_id": out.id,
-                        "email": out.email,
-                        "full_name": out.full_name,
-                    },
-                    "source": "auth-svc",
-                },
-                headers=headers,
-            )
-            logger.info(
-                "event_published",
-                extra={
-                    "event": "user_registered",
-                    "user_id": out.id,
-                    "event_id": event_id,
-                    "request_id": getattr(request.state, "request_id", "-"),
-                }
-            )
-        except Exception as e:
-            # No fallar el registro si Kafka falla
-            logger.error(
-                "kafka_publish_failed",
-                extra={"event": "user_registered", "user_id": out.id, "error": str(e)}
-            )
+
+            async def _publish_safe(topic, key, value, headers):
+                try:
+                    await bus.publish(topic, key=key, value=value, headers=headers)
+                    logger.info(
+                        "event_published",
+                        extra={
+                            "event": "user_registered",
+                            "user_id": out.id,
+                            "event_id": event_id,
+                            "request_id": getattr(request.state, "request_id", "-"),
+                        }
+                    )
+                except Exception as e:
+                    # No fallar el registro si Kafka falla; loguear error para auditoría
+                    logger.error(
+                        "kafka_publish_failed",
+                        extra={"event": "user_registered", "user_id": out.id, "error": str(e)}
+                    )
+
+            # Create background task and do not await it
+            try:
+                asyncio.create_task(
+                    _publish_safe(
+                        settings.user_registered_topic,
+                        out.id,
+                        {
+                            "event": "user_registered",
+                            "id": event_id,
+                            "ts": now_ms,
+                            "v": 1,
+                            "payload": {
+                                "user_id": out.id,
+                                "email": out.email,
+                                "full_name": out.full_name,
+                            },
+                            "source": "auth-svc",
+                        },
+                        headers,
+                    )
+                )
+            except Exception as e:
+                # Scheduling the background task failed; log but don't fail the request
+                logger.error("kafka_publish_schedule_failed", extra={"error": str(e), "user_id": out.id})
+        except Exception:
+            # Any unexpected error here should not break the registration flow
+            logger.exception("unexpected_error_while_scheduling_kafka_publish")
         # -------------------------------
 
         return out

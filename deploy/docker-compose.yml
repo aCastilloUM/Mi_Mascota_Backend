@@ -103,19 +103,28 @@ services:
     depends_on:
       - postgres
 
+  # adminer:
+  #   image: adminer
+  #   restart: always
+  #   ports:
+  #     - "8081:8080"
+  #   depends_on:
+  #     - postgres
+
   # ==================== MICROSERVICIOS ====================
   
   profiles-svc:
     build:
       context: ../services/profile-svc
     container_name: profiles-svc
-    env_file:
-      - ../services/profile-svc/.env
+    # Use Railway DB for profiles (no override file).
     environment:
-      DB_HOST: postgres
-      DB_USER: app
-      DB_PASSWORD: app
-      DB_NAME: appdb
+      DB_HOST: "shinkansen.proxy.rlwy.net"
+      DB_PORT: "57241"
+      DB_USER: "postgres"
+      DB_PASSWORD: "nHvixZvWWCaLFpXwTFsRrXMXXkETCEoI"
+      DB_NAME: "railway"
+      DB_SCHEMA: "profiles"
       KAFKA_ENABLED: "true"
       MINIO_ENABLED: "true"
       MINIO_ENDPOINT: minio:9000
@@ -149,8 +158,9 @@ services:
     ports:
       - "8006:8006"
     environment:
-      # Database
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # Database - use Railway directly (no override)
+      DATABASE_URL: "postgresql+asyncpg://postgres:nHvixZvWWCaLFpXwTFsRrXMXXkETCEoI@shinkansen.proxy.rlwy.net:57241/railway"
+      DB_SCHEMA: "auth"
       
       # Redis
       REDIS_URL: redis://redis:6379/0
