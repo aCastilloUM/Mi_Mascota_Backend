@@ -162,16 +162,6 @@ services:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
     restart: unless-stopped
 
-  elasticsearch-exporter:
-    image: prometheuscommunity/elasticsearch-exporter:1.4.0
-    container_name: elasticsearch-exporter
-    environment:
-      ELASTICSEARCH_URI: "http://elasticsearch:9200"
-    ports:
-      - "9114:9114"
-    depends_on:
-      - elasticsearch
-    restart: unless-stopped
 
   # adminer (disabled)
   # adminer:
