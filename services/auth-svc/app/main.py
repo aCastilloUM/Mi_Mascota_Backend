@@ -1,5 +1,5 @@
 # services/auth-svc/app/main.py
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
@@ -17,6 +17,7 @@ from app.api.health import router as ops_router
 from app.events.kafka import bus
 from app.infra.redis import redis_client
 from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 setup_logging()
 logger = logging.getLogger("auth-svc")
@@ -61,6 +62,24 @@ try:
     Instrumentator().instrument(app).expose(app, include_in_schema=False, endpoint="/metrics")
 except Exception:
     logger.exception("prometheus_instrumentation_failed")
+
+# Allow HEAD requests to /metrics (some clients/browsers issue HEAD and the
+# instrumentator may only register GET; respond with the same headers and
+# an empty body so HEAD requests succeed with the correct content-type/length).
+@app.head("/metrics")
+async def metrics_head(request: Request):
+    try:
+        data = generate_latest()
+        headers = {
+            "content-type": CONTENT_TYPE_LATEST,
+            "content-length": str(len(data)),
+        }
+        # Return empty body for HEAD but include the same headers so clients
+        # (and browsers doing HEAD) receive a valid response.
+        return Response(content=b"", media_type=CONTENT_TYPE_LATEST, headers=headers)
+    except Exception:
+        logger.exception("metrics_head_failed")
+        return Response(status_code=500)
 
 # --- CORS: habilitar en dev cuando el frontend llama directamente al servicio ---
 # El gateway suele encargarse de CORS en despliegues con proxy, pero en

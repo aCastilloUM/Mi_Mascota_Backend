@@ -23,21 +23,28 @@ services:
       ZOOKEEPER_CLIENT_PORT: 2181
     ports:
       - "2181:2181"
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-log:/var/lib/zookeeper/log
 
   kafka:
     image: confluentinc/cp-kafka:7.6.1
     depends_on:
       - zookeeper
     environment:
+      KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
     ports:
       - "9092:9092"      # intra-docker
       - "29092:29092"    # host -> broker
+    volumes:
+      - kafka-data:/var/lib/kafka/data
 
   redis:
     image: redis:7-alpine
@@ -112,10 +119,17 @@ services:
     container_name: grafana
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_LOG_LEVEL=debug
     ports:
       - "3000:3000"
     volumes:
-      - grafana-data:/var/lib/grafana
+      # Use a host bind for grafana data during local development so sub-bind mounts
+      # (dashboards/provisioning) are not shadowed by a named volume. This keeps
+      # dashboards and provisioning files visible inside the container.
+      - ./grafana/data:/var/lib/grafana
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
     depends_on:
       - prometheus
     restart: unless-stopped
@@ -154,7 +168,10 @@ services:
     container_name: metricbeat
     user: root
     volumes:
-      - ./monitoring/metricbeat.yml:/usr/share/metricbeat/metricbeat.yml:ro
+      # Mount the host config into a temporary location and copy it inside the container
+      # at startup so we can set safe permissions (bind mounts from Windows often appear 0777).
+      - ./monitoring/metricbeat.yml:/tmp/metricbeat.yml:ro
+    command: sh -c "cp /tmp/metricbeat.yml /usr/share/metricbeat/metricbeat.yml && chmod 0644 /usr/share/metricbeat/metricbeat.yml && /usr/share/metricbeat/metricbeat -e -c /usr/share/metricbeat/metricbeat.yml"
     depends_on:
       - elasticsearch
       - kibana
@@ -207,6 +224,8 @@ services:
         condition: service_started
       minio-setup:
         condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     ports:
       - "8082:8080"
     volumes:
@@ -225,23 +244,23 @@ services:
     ports:
       - "8006:8006"
     environment:
-      # Database - use Railway directly (no override)
+      # Database - default to the Railway DB (can be overridden via an override file for local dev)
       DATABASE_URL: "postgresql+asyncpg://postgres:nHvixZvWWCaLFpXwTFsRrXMXXkETCEoI@shinkansen.proxy.rlwy.net:57241/railway"
       DB_SCHEMA: "auth"
-      
+
       # Redis
       REDIS_URL: redis://redis:6379/0
-      
+
       # Kafka
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      
+
       # JWT
       JWT_SECRET: ${JWT_SECRET_KEY}
       JWT_ISSUER: ${JWT_ISSUER:-mimascota-auth}
       JWT_AUDIENCE: ${JWT_AUDIENCE:-mimascota-api}
       ACCESS_TOKEN_TTL_SECONDS: 900
       REFRESH_TOKEN_TTL_SECONDS: 1209600
-      
+
       # SMTP
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT}
@@ -249,21 +268,24 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD}
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME}
-      
+
       # Security
       EMAIL_VERIFICATION_TOKEN_TTL_MINUTES: 1440
       PASSWORD_RESET_TOKEN_TTL_MINUTES: 60
       ACCOUNT_LOCK_THRESHOLD: 5
       ACCOUNT_LOCK_DURATION_MINUTES: 30
-      
+
       # Misc
       REQUEST_ID_HEADER: X-Request-Id
-      USER_REGISTERED_TOPIC: user.registered
+      USER_REGISTERED_TOPIC: "user.registered.v1"
+      PROFILE_SVC_URL: "http://profiles-svc:8080"
     depends_on:
       redis:
         condition: service_healthy
       kafka:
         condition: service_started
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8006/health')"]
       interval: 10s
@@ -309,6 +331,8 @@ services:
       # CORS
       CORS_ORIGINS: http://localhost:3000,http://localhost:5173
       CORS_CREDENTIALS: "true"
+      # Proxy timeout used by the API Gateway when forwarding requests to backends (seconds)
+      GATEWAY_PROXY_TIMEOUT_SECONDS: 60
     depends_on:
       auth-svc:
         condition: service_healthy
@@ -326,4 +350,7 @@ volumes:
   pgdata:
   minio-data:
   prometheus-data:
-  grafana-data:
+  # grafana-data removed: using host bind ./grafana/data to preserve sub-mounts
+  kafka-data:
+  zookeeper-data:
+  zookeeper-log:

@@ -21,6 +21,7 @@ PUBLIC_PATHS = [
     "/api/v1/auth/refresh",
     "/api/v1/auth/forgot-password",
     "/api/v1/auth/reset-password",
+    "/api/v1/auth/resend-verification",
     # Make verify-email public so users can verify from the frontend link
     "/api/v1/auth/verify-email",
 ]

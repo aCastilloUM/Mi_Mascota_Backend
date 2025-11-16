@@ -33,3 +33,4 @@ httpx>=0.24.1
 # Prometheus metrics
 prometheus-client==0.20.0
 prometheus-fastapi-instrumentator==6.0.0
+python-multipart==0.0.6

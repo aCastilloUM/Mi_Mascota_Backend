@@ -1,8 +1,8 @@
 metricbeat.modules:
-- module: elasticsearch
-  metricsets: [cluster_stats, node_stats, node_disk]
-  period: 10s
-  hosts: ["http://elasticsearch:9200"]
+  - module: elasticsearch
+    metricsets: [cluster_stats, node_stats]
+    period: 10s
+    hosts: ["http://elasticsearch:9200"]
 
 output.elasticsearch:
   # Send metrics to local Elasticsearch

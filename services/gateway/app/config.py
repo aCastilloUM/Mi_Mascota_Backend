@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     # Gateway config
     gateway_port: int = Field(default=8080, alias="GATEWAY_PORT")
     log_level: str = Field(default="info", alias="LOG_LEVEL")
+    # Proxy timeout (seconds) used when the gateway forwards requests to backends
+    gateway_proxy_timeout_seconds: int = Field(default=30, alias="GATEWAY_PROXY_TIMEOUT_SECONDS")
     
     # Redis (para cache y rate limiting)
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
