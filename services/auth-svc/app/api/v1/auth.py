@@ -20,12 +20,15 @@ from app.api.v1.schemas import (
     Login2FARequest,
     Login2FAResponse
 )
+from fastapi import File, UploadFile, Form
 from app.core.security import decode_token, build_refresh_cookie_value, parse_refresh_cookie_value
 from app.core.config import settings
 from app.events.kafka import bus
+import httpx
 from app.services.otp_service import otp_service
 from app.services.two_factor_session import two_factor_session_manager
 from app.api.v1.schemas_2fa import Validate2FARequest, Validate2FAResponse
+from app.core.security import create_access_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -146,6 +149,33 @@ async def register_user(payload: RegisterRequest, request: Request, session: Asy
         logger.exception("Fallo en /api/v1/auth/register")
         raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR"})
 
+
+
+@router.post("/register/photo")
+async def register_photo(user_id: str = Form(...), file: UploadFile = File(...)):
+    """Endpoint to accept a photo at registration time and forward it to profile-svc internal API.
+
+    This allows the frontend to upload a profile photo during registration even if the user
+    cannot log in until email verification.
+    """
+    if not settings.profile_svc_url:
+        raise HTTPException(status_code=503, detail="Profile service not configured")
+
+    try:
+        content = await file.read()
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            url = settings.profile_svc_url.rstrip('/') + f"/internal/profiles/{user_id}/photo"
+            files = {"file": (file.filename, content, file.content_type)}
+            resp = await client.post(url, files=files)
+            if resp.status_code >= 400:
+                raise HTTPException(status_code=resp.status_code, detail=resp.text)
+            return resp.json()
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("failed_forward_register_photo")
+        raise HTTPException(status_code=502, detail="Failed to forward photo to profile service")
+
 @router.post("/login")
 async def login(payload: LoginRequest, request: Request, response: Response, session: AsyncSession = Depends(get_session)):
     """
@@ -227,6 +257,7 @@ async def login_2fa(
     except Exception:
         logger.exception("Fallo en /api/v1/auth/login/2fa")
         raise HTTPException(status_code=500, detail={"code": "INTERNAL_ERROR"})
+
 
 
 @router.post("/2fa/send-otp")

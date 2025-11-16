@@ -13,6 +13,7 @@ pydantic-settings==2.2.1
 
 # Observabilidad / métricas
 prometheus-client==0.20.0
+prometheus-fastapi-instrumentator==6.0.0
 
 # Logs y utilidades
 python-dotenv==1.0.1

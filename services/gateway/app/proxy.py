@@ -17,7 +17,7 @@ async def proxy_request(
     request: Request,
     target_url: str,
     path: str = None,
-    timeout: float = 30.0,
+    timeout: float | None = None,
     service_name: str = "backend"
 ) -> Response:
     """
@@ -70,6 +70,11 @@ async def proxy_request(
     # Leer body del request
     body = await request.body()
     
+    # Si no se pasó timeout, usar el valor configurado en settings
+    if timeout is None:
+        # settings.gateway_proxy_timeout_seconds está en segundos
+        timeout = float(getattr(settings, "gateway_proxy_timeout_seconds", 30))
+
     # Obtener Circuit Breaker para este servicio
     circuit_breaker = get_circuit_breaker(service_name)
     

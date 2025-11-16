@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.config import settings
 from app.db.session import AsyncSessionLocal
 from app.models.profile import Profile
+from app.core.metrics import profile_write_counter
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,11 @@ class UserVerifiedConsumer:
                         await session.flush()
                         await session.commit()
                         logger.info("profile_updated_on_user_registered", extra={"user_id": user_id})
+                        # Instrument consumer-created updates so Prometheus has visibility
+                        try:
+                            profile_write_counter.labels(action="update", outcome="success").inc()
+                        except Exception:
+                            logger.exception("failed_increment_profile_write_counter_on_update")
                         return
 
                     # try to create profile using provided full_name and email
@@ -119,6 +125,10 @@ class UserVerifiedConsumer:
                         await session.flush()
                         await session.commit()
                         logger.info("profile_created_on_user_registered", extra={"user_id": user_id})
+                        try:
+                            profile_write_counter.labels(action="create", outcome="success").inc()
+                        except Exception:
+                            logger.exception("failed_increment_profile_write_counter_on_create")
                         return
                     except IntegrityError:
                         # Unique constraint (email/user_id) — try to update existing by email
@@ -134,6 +144,10 @@ class UserVerifiedConsumer:
                                 await session.flush()
                                 await session.commit()
                                 logger.info("profile_upserted_on_user_registered_by_email", extra={"email": email, "user_id": user_id})
+                                try:
+                                    profile_write_counter.labels(action="upsert", outcome="success").inc()
+                                except Exception:
+                                    logger.exception("failed_increment_profile_write_counter_on_upsert")
                                 return
                         except Exception:
                             await session.rollback()
@@ -162,6 +176,10 @@ class UserVerifiedConsumer:
                         await session.flush()
                         await session.commit()
                         logger.info("profile_email_verified_updated", extra={"user_id": user_id})
+                        try:
+                            profile_write_counter.labels(action="update", outcome="success").inc()
+                        except Exception:
+                            logger.exception("failed_increment_profile_write_counter_on_verified_update")
                         return
 
                     # try to get full_name from auth.users table in same DB if available
@@ -180,6 +198,10 @@ class UserVerifiedConsumer:
                         await session.flush()
                         await session.commit()
                         logger.info("profile_created_on_user_verified", extra={"user_id": user_id})
+                        try:
+                            profile_write_counter.labels(action="create", outcome="success").inc()
+                        except Exception:
+                            logger.exception("failed_increment_profile_write_counter_on_verified_create")
                     except IntegrityError:
                         # Handle race / unique constraint (email already exists for another profile)
                         await session.rollback()
@@ -194,6 +216,10 @@ class UserVerifiedConsumer:
                                 await session.flush()
                                 await session.commit()
                                 logger.info("profile_email_verified_updated_by_email", extra={"email": email, "user_id": user_id})
+                                try:
+                                    profile_write_counter.labels(action="upsert", outcome="success").inc()
+                                except Exception:
+                                    logger.exception("failed_increment_profile_write_counter_on_verified_upsert")
                                 return
                             else:
                                 logger.error("IntegrityError but no existing profile found by email", extra={"email": email})

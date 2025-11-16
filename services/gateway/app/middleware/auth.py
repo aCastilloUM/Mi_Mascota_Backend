@@ -15,11 +15,13 @@ logger = logging.getLogger(__name__)
 # Rutas públicas que NO requieren autenticación
 PUBLIC_PATHS = [
     "/health",
+    "/metrics",
     "/api/v1/auth/register",
     "/api/v1/auth/login",
     "/api/v1/auth/refresh",
     "/api/v1/auth/forgot-password",
     "/api/v1/auth/reset-password",
+    "/api/v1/auth/resend-verification",
     # Make verify-email public so users can verify from the frontend link
     "/api/v1/auth/verify-email",
 ]

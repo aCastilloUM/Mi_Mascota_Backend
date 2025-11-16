@@ -90,6 +90,20 @@ class AuthService:
         except Exception:
             logger.exception("failed_to_schedule_verification_email")
 
+        # Try to synchronously create a profile in profile-svc so the profile
+        # exists immediately after registration (even if login is blocked until
+        # email verification). This is a best-effort, non-blocking on failure.
+        if settings.profile_svc_url:
+            try:
+                async with httpx.AsyncClient(timeout=3.0) as client:
+                    url = settings.profile_svc_url.rstrip("/") + "/internal/profiles"
+                    payload = {"user_id": str(user.id), "email": user.email, "display_name": user.full_name}
+                    resp = await client.post(url, json=payload)
+                    if resp.status_code >= 400:
+                        logger.warning("profile_sync_on_register_failed", extra={"status_code": resp.status_code, "text": resp.text})
+            except Exception:
+                logger.exception("profile_sync_request_failed_on_register")
+
         # Optionally expose the verification token in development for local testing.
         # Controlled by the EXPOSE_DEV_VERIFICATION_TOKEN env var (default: false).
         if getattr(settings, "expose_dev_verification_token", False):
