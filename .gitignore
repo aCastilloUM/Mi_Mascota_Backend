@@ -6,3 +6,7 @@ __pycache__/
 *.sqlite
 *.db
 deploy/photon-src/
+# Deploy artifacts and temporary files
+deploy/tmp*.jpg
+deploy/openapi.json
+deploy/grafana/data/*.db
