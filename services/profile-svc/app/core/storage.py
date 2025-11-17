@@ -11,6 +11,13 @@ from uuid import UUID, uuid4
 
 from minio import Minio
 from minio.error import S3Error
+from datetime import timedelta
+
+
+# Removed presigned URL generation: this service uses MinIO public URLs (via
+# MINIO_PUBLIC_URL or direct endpoint) instead of generating temporary
+# presigned links. Keeping object storage interactions minimal and focused on
+# MinIO; avoid references to S3/AWS signing in the codebase.
 
 from app.core.config import settings
 
@@ -102,6 +109,10 @@ async def store_profile_photo(
     )
 
     logger.debug("Stored profile photo in MinIO | profile_id=%s object=%s", profile_id, object_key)
+    # Return a public URL for the object. The application expects the
+    # frontend to be able to GET this URL; make sure MinIO bucket policy is
+    # configured (download/read) or that `MINIO_PUBLIC_URL` points to a proxy
+    # that can serve objects.
     return _build_public_url(object_key)
 
 

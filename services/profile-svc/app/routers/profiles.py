@@ -206,6 +206,16 @@ async def create_profile(
     return ProfileOut.model_validate(obj)
 
 
+@router.get("/me", response_model=ProfileOut)
+async def get_my_profile(db: AsyncSession = Depends(get_session), current_user: AuthUser = Depends(get_current_user)):
+    """Return the profile associated with the currently authenticated user."""
+    result = await db.execute(select(Profile).where(Profile.user_id == current_user.user_id))
+    obj = result.scalar_one_or_none()
+    if not obj:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    return ProfileOut.model_validate(obj)
+
+
 @router.get("/{profile_id}", response_model=ProfileOut)
 async def get_profile(profile_id: UUID, db: AsyncSession = Depends(get_session)):
     result = await db.execute(select(Profile).where(Profile.id == profile_id))

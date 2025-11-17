@@ -461,35 +461,61 @@ class AuthService:
 
         # Marcar email como verificado
         await self.users.verify_email(user.id)
+        # Publish domain event to Kafka (best-effort) in background so it doesn't block the HTTP response.
+        # Use a small timeout inside the background task and log failures.
+        def _schedule_publish():
+            async def _pub():
+                try:
+                    await asyncio.wait_for(
+                        bus.publish(
+                            settings.user_verified_topic,
+                            key=str(user.id),
+                            value={
+                                "event": "user_verified",
+                                "version": 1,
+                                "user_id": str(user.id),
+                                "email": user.email,
+                                "occurred_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                            },
+                        ),
+                        timeout=3.0,
+                    )
+                    logger.info("user_verified_event_scheduled", extra={"user_id": str(user.id)})
+                except asyncio.TimeoutError:
+                    logger.warning("publish_user_verified_timeout", extra={"user_id": str(user.id)})
+                except Exception:
+                    logger.exception("failed_to_publish_user_verified_event")
 
-        # Publish domain event to Kafka (best-effort). This is useful for other services to react
-        # e.g., profile-svc can listen for this event and mark profile as email_verified.
-        try:
-            await bus.publish(
-                settings.user_verified_topic,
-                key=str(user.id),
-                value={
-                    "event": "user_verified",
-                    "version": 1,
-                    "user_id": str(user.id),
-                    "email": user.email,
-                    "occurred_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                },
-            )
-        except Exception:
-            logger.exception("failed_to_publish_user_verified_event")
-
-        # Also try an immediate sync to profile-svc internal endpoint if configured (best-effort).
-        if settings.profile_svc_url:
             try:
-                async with httpx.AsyncClient(timeout=5.0) as client:
-                    url = settings.profile_svc_url.rstrip("/") + "/internal/profiles/verify"
-                    payload = {"user_id": str(user.id), "email": user.email}
-                    resp = await client.post(url, json=payload)
-                    if resp.status_code >= 400:
-                        logger.warning("profile_sync_failed", extra={"status_code": resp.status_code, "text": resp.text})
+                asyncio.create_task(_pub())
             except Exception:
-                logger.exception("profile_sync_request_failed")
+                logger.exception("failed_to_schedule_publish_task")
+
+        _schedule_publish()
+
+        # Also try an immediate sync to profile-svc internal endpoint if configured (best-effort) but
+        # perform it in background so a slow profile service doesn't timeout the HTTP flow.
+        if settings.profile_svc_url:
+            def _schedule_profile_sync():
+                async def _sync():
+                    try:
+                        async with httpx.AsyncClient(timeout=2.0) as client:
+                            url = settings.profile_svc_url.rstrip("/") + "/internal/profiles/verify"
+                            payload = {"user_id": str(user.id), "email": user.email}
+                            resp = await client.post(url, json=payload)
+                            if resp.status_code >= 400:
+                                logger.warning("profile_sync_failed", extra={"status_code": resp.status_code, "text": resp.text})
+                            else:
+                                logger.info("profile_sync_succeeded", extra={"user_id": str(user.id)})
+                    except Exception:
+                        logger.exception("profile_sync_request_failed")
+
+                try:
+                    asyncio.create_task(_sync())
+                except Exception:
+                    logger.exception("failed_to_schedule_profile_sync")
+
+            _schedule_profile_sync()
 
         return True
 
